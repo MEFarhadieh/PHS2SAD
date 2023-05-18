@@ -13,6 +13,8 @@ library(RColorBrewer)
 library(tidyverse)
 library(kableExtra)
 library(consort)
+library(gtsummary)
+
 source("https://adni.bitbucket.io/myfunctions.R")
 theme_set(theme_bw())
 dxpal <- c( "#9CCDBA", "#F1A84A", "#825C9F")
@@ -254,5 +256,58 @@ ids_exclude <- Reduce(union,
 paste("[Count] Subjects to be excluded due to without PHS, GAP-43 and NFL =", 
       length(ids_exclude))
 
-ddf <- mdf.clean %>%
+df <- mdf.clean %>%
   filter(!(RID %in% ids_exclude))
+
+df$ABETA[df$ABETA == ">1700"] <- "1700"
+df$ABETA <- as.numeric(df$ABETA)
+df$TAU <- as.numeric(df$TAU)
+df$PTAU <- as.numeric(df$PTAU)
+df$ABETA.bl[df$ABETA.bl == ">1700"] <- "1700"
+df$ABETA.bl <- as.numeric(df$ABETA.bl)
+df$TAU.bl <- as.numeric(df$TAU.bl)
+df$PTAU.bl <- as.numeric(df$PTAU.bl)
+df$DX <- gsub("Dementia", "AD", df$DX)
+
+df <- merge(df, df.bl.cp[, c("RID", "GAP.43", "PLASMA_NFL")], by = "RID", all.x = TRUE)
+colnames(df)[colnames(df) == "GAP.43.x"] <- "GAP.43"
+colnames(df)[colnames(df) == "PLASMA_NFL.x"] <- "PLASMA_NFL"
+colnames(df)[colnames(df) == "GAP.43.y"] <- "GAP.43.bl"
+colnames(df)[colnames(df) == "PLASMA_NFL.y"] <- "PLASMA_NFL.bl"
+
+# Remove technical replicate problems of GAP-43 and NFL data
+rownames(df)[duplicated(df$SID)]
+df <- df[!(rownames(df) %in% 
+             rownames(df)[duplicated(df$SID)]), ]
+
+# Basic demography
+df.bl <- df[df$VISCODE == "bl",]
+df.bl <- na.omit(df.bl[, 33])
+df.bl %>% 
+  select(c(AGE,PTGENDER,PTEDUCAT,APOE4,PHS,ABETA.bl,TAU.bl,PTAU.bl,
+           GAP.43,PLASMA_NFL,MMSE.bl,CDRSB.bl,ADAS11.bl,ADAS13.bl,
+           ADASQ4.bl,MOCA.bl,DX)) %>% 
+  tbl_summary(by = DX, statistic = list(
+    all_continuous() ~ "{mean} ({sd})",
+    all_categorical() ~ "{n} / {N} ({p}%)"
+  )) %>% 
+  add_p()
+df.bl <- df.bl[complete.cases(df.bl$GAP.43), , drop = FALSE]
+df.bl <- df.bl[complete.cases(df.bl$PLASMA_NFL), , drop = FALSE]
+colSums(is.na(df.bl))
+dff <- df[df$RID %in% df.bl$RID, ]
+
+# Saved cleaned data
+write.table(df, 
+            file = "Data/Final_2.tsv",
+            quote = F, sep = "\t", row.names = F, col.names = T)
+
+write.table(mdf.clean, 
+            file = "Data/Clean_subjects.tsv",
+            quote = F, sep = "\t", row.names = F, col.names = T)
+
+save(dff, 
+     file = "Data/final_2.RData")
+
+save(mdf.clean,
+     file = "Data/adni_cleaned.RData")
